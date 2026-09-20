@@ -495,7 +495,7 @@ else:
 
         st.markdown("---")
         
-        # 3. TOMBOL UNTUK MEMULAI KUIS (SINKRON DENGAN ANIMASI & SUARA 1, 2, 3)
+        # 3. TOMBOL UNTUK MEMULAI KUIS
         if not st.session_state.quiz_started and not st.session_state.show_countdown and not st.session_state.quiz_finished:
             st.info("💡 **Petunjuk:** Silakan baca dan pelajari ringkasan materi di atas. Jika kamu sudah siap untuk menjawab 20 soal kuis, tekan tombol di bawah ini untuk memulai hitung mundur (1, 2, 3) dan timer pengerjaan (3 Menit).")
             if st.button("🚀 Saya Sudah Membaca & Siap Mulai Kuis Sekarang!"):
@@ -518,7 +518,6 @@ else:
                 const targetWin = window.parent || window;
                 const textElem = document.getElementById('countdown-text');
                 
-                // Urutan Angka & Nada Suara
                 const steps = [
                     { num: '1', freq: 440 },
                     { num: '2', freq: 554.37 },
@@ -544,19 +543,36 @@ else:
             time.sleep(3.2)
             st.session_state.show_countdown = False
             st.session_state.quiz_started = True
+            st.session_state.start_timestamp = time.time()
             st.rerun()
         
         elif st.session_state.quiz_started and not st.session_state.quiz_finished:
-            st.subheader(f"📝 Kuis Evaluasi Khusus {st.session_state.siswa_kelas} (20 Soal)")
-            st.warning("⏱️ **Waktu Berjalan!** Waktu pengerjaan kamu adalah **3 Menit (180 Detik)**.")
+            # KALKULASI WAKTU (3 MENIT)
+            DURASI_DETIK = 180
+            waktu_berjalan = int(time.time() - st.session_state.get('start_timestamp', time.time()))
+            sisa_waktu = DURASI_DETIK - waktu_berjalan
+            is_expired = sisa_waktu <= 0
 
-            # TIMER JS OTOMATIS BERHENTI KETIKA JAWABAN DIKIRIM
-            st.components.v1.html("""
+            if st.session_state.siswa_kelas == "Kelas 7 SMP":
+                soal_aktif = soal_kelas_7
+            elif st.session_state.siswa_kelas == "Kelas 8 SMP":
+                soal_aktif = soal_kelas_8
+            else:
+                soal_aktif = soal_kelas_9
+
+            if is_expired:
+                st.error("🚨 **WAKTU UJIAN TELAH HABIS!** Soal otomatis dikunci. Silakan klik tombol di bawah untuk memproses nilai akhir kamu.")
+            else:
+                st.subheader(f"📝 Kuis Evaluasi Khusus {st.session_state.siswa_kelas} (20 Soal)")
+                st.warning("⏱️ **Waktu Berjalan!** Waktu pengerjaan kamu adalah **3 Menit (180 Detik)**.")
+
+                # TIMER JAVASCRIPT TANPA F-STRING SUPAYA TIDAK SYNTAX ERROR
+                js_timer_code = """
                 <div style="background-color: #2563eb; color: white; padding: 12px; border-radius: 12px; text-align: center; font-family: sans-serif; font-weight: bold; font-size: 18px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                    ⏱️ Sisa Waktu Ujian: <span id="timer" style="color: #fef08a;">03:00</span>
+                    ⏱️ Sisa Waktu: <span id="timer" style="color: #fef08a;">03:00</span>
                 </div>
                 <script>
-                var timeLeft = 180;
+                var timeLeft = """ + str(max(0, sisa_waktu)) + """ ;
                 var timerElement = document.getElementById('timer');
                 var countdown = setInterval(function(){
                     var minutes = Math.floor(timeLeft / 60);
@@ -565,22 +581,16 @@ else:
                     timerElement.innerHTML = "0" + minutes + ":" + seconds;
                     if (timeLeft <= 0) {
                         clearInterval(countdown);
-                        alert("⏱️ Waktu pengerjaan (3 Menit) telah HABIS! Silakan kirim jawaban kamu.");
+                        alert("⏱️ Waktu pengerjaan telah HABIS! Soal telah dikunci.");
+                        (window.parent || window).location.reload();
                     }
                     timeLeft -= 1;
                 }, 1000);
                 </script>
-            """, height=65)
+                """
+                st.components.v1.html(js_timer_code, height=65)
 
-            # PILIH SOAL BERDASARKAN KELAS
-            if st.session_state.siswa_kelas == "Kelas 7 SMP":
-                soal_aktif = soal_kelas_7
-            elif st.session_state.siswa_kelas == "Kelas 8 SMP":
-                soal_aktif = soal_kelas_8
-            else:
-                soal_aktif = soal_kelas_9
-
-            # FORM KUIS DENGAN OPSI A-E
+            # FORM KUIS
             with st.form("form_kuis_spesifik"):
                 jawaban_user = {}
                 
@@ -590,17 +600,18 @@ else:
                         label="Pilih Jawaban:",
                         options=item['opsi'],
                         index=None,
-                        key=f"q_spesifik_{item['id']}"
+                        key=f"q_spesifik_{item['id']}",
+                        disabled=is_expired
                     )
                     st.markdown("---")
                 
-                btn_kirim = st.form_submit_button("🚀 Selesaikan & Kirim Hasil Jawaban ke Dasbor Guru")
+                label_tombol = "🛑 Waktu Habis - Kirim Jawaban Tersimpan" if is_expired else "🚀 Selesaikan & Kirim Hasil Jawaban ke Dasbor Guru"
+                btn_kirim = st.form_submit_button(label_tombol)
 
-            # LOGIKA EVALUASI JAWABAN
             if btn_kirim:
                 belum_dijawab = [k for k, v in jawaban_user.items() if v is None]
                 
-                if belum_dijawab:
+                if belum_dijawab and not is_expired:
                     st.error(f"⚠️ Kamu belum menjawab soal nomor: {', '.join(map(str, belum_dijawab))}. Silakan jawab seluruh soal sebelum mengirim!")
                 else:
                     skor_total = 0
@@ -608,12 +619,12 @@ else:
                         if jawaban_user[item['id']] == item['kunci']:
                             skor_total += 5
                     
-                    # Simpan Data ke Server Database SQLite
                     simpan_data(
                         nama=st.session_state.siswa_nama,
                         kelas=st.session_state.siswa_kelas,
                         skor=skor_total,
-                        peringatan_tab=st.session_state.tab_warnings
+                        peringatan_tab=st.session_state.tab_warnings,
+                        status="Waktu Habis" if is_expired else "Selesai"
                     )
                     
                     st.session_state.quiz_finished = True
@@ -621,7 +632,7 @@ else:
                     st.session_state.play_success_sound = True
                     st.rerun()
 
-        # TAMPILAN HASIL AKHIR (DENGAN SUARA SELESAI / FANFARE)
+        # TAMPILAN HASIL AKHIR
         elif st.session_state.quiz_finished:
             if st.session_state.get('play_success_sound', False):
                 st.components.v1.html("""
